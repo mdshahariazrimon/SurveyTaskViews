@@ -27,6 +27,8 @@ object AppModule {
     fun provideApiService(retrofit: Retrofit): ApiService =
         retrofit.create(ApiService::class.java)
 
-    // Hilt will automatically know how to provide FormRepository
-    // because its constructor is annotated with @Inject.
+    @Provides
+    @Singleton
+    fun provideFormRepository(apiService: ApiService): FormRepository =
+        FormRepository(apiService)
 }
