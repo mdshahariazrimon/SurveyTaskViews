@@ -36,7 +36,7 @@ fun QuestionView(
     question: Question,
     onNextClicked: (String) -> Unit
 ) {
-    var currentAnswer by remember(question.id) { mutableStateOf("") }
+    var currentAnswer by remember(question.id) { mutableStateOf<Any>("") }
 
     Column(
         modifier = Modifier
@@ -47,7 +47,6 @@ fun QuestionView(
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                // MODIFIED: Added ?: "" to prevent crash if label is null
                 text = question.label ?: "No Label Found",
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.padding(bottom = 32.dp)
@@ -56,31 +55,75 @@ fun QuestionView(
             when (question.type) {
                 "textInput", "numberInput" -> {
                     OutlinedTextField(
-                        value = currentAnswer,
+                        value = currentAnswer as? String ?: "",
                         onValueChange = { currentAnswer = it },
                         label = { Text("Your answer") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
                 "radio" -> {
+                    if (currentAnswer !is String) currentAnswer = ""
+                    val answer = currentAnswer as String
                     Column {
                         question.options?.forEach { option ->
                             Row(
                                 Modifier
                                     .fillMaxWidth()
                                     .selectable(
-                                        selected = (currentAnswer == option.value),
+                                        selected = (answer == option.value),
                                         onClick = { currentAnswer = option.value }
                                     )
                                     .padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 RadioButton(
-                                    selected = (currentAnswer == option.value),
+                                    selected = (answer == option.value),
                                     onClick = { currentAnswer = option.value }
                                 )
                                 Text(
-                                    // MODIFIED: Added ?: "" to prevent crash if option value is null
+                                    text = option.value ?: "",
+                                    modifier = Modifier.padding(start = 16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                "multipleChoice" -> {
+                    // MODIFIED: This block is updated to handle mutable sets correctly.
+                    if (currentAnswer !is Set<*>) currentAnswer = mutableSetOf<String>()
+                    val selectedAnswers = (currentAnswer as Set<*>).filterIsInstance<String>().toMutableSet()
+
+                    Column {
+                        question.options?.forEach { option ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .selectable(
+                                        selected = (option.value in selectedAnswers),
+                                        onClick = {
+                                            if (option.value in selectedAnswers) {
+                                                selectedAnswers.remove(option.value)
+                                            } else {
+                                                selectedAnswers.add(option.value)
+                                            }
+                                            currentAnswer = selectedAnswers.toSet()
+                                        }
+                                    )
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = (option.value in selectedAnswers),
+                                    onCheckedChange = { isChecked ->
+                                        if (isChecked) {
+                                            selectedAnswers.add(option.value)
+                                        } else {
+                                            selectedAnswers.remove(option.value)
+                                        }
+                                        currentAnswer = selectedAnswers.toSet()
+                                    }
+                                )
+                                Text(
                                     text = option.value ?: "",
                                     modifier = Modifier.padding(start = 16.dp)
                                 )
@@ -93,9 +136,15 @@ fun QuestionView(
             }
         }
 
+        val (finalAnswer, isEnabled) = when (val ans = currentAnswer) {
+            is String -> ans to ans.isNotBlank()
+            is Set<*> -> (ans as Set<String>).joinToString(", ") to ans.isNotEmpty()
+            else -> "" to false
+        }
+
         Button(
-            onClick = { onNextClicked(currentAnswer) },
-            enabled = currentAnswer.isNotBlank(),
+            onClick = { onNextClicked(finalAnswer) },
+            enabled = isEnabled,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 16.dp)
