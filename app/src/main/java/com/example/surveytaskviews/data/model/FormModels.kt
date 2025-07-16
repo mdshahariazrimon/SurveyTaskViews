@@ -2,7 +2,6 @@ package com.example.surveytaskviews.data.model
 
 import com.google.gson.annotations.SerializedName
 
-// New data class for the referTo object
 data class ReferTo(
     @SerializedName("id")
     val id: String
@@ -28,13 +27,14 @@ data class Question(
     val id: String,
     @SerializedName("type")
     val type: String,
+    // MODIFIED: Made label nullable
     @SerializedName("label")
-    val label: String,
+    val label: String?,
     @SerializedName("options")
     val options: List<Option>?,
-    // Updated to use the ReferTo object
+    // MODIFIED: Made referTo nullable
     @SerializedName("referTo")
-    val referTo: ReferTo,
+    val referTo: ReferTo?,
     @SerializedName("skip")
     val skip: Skip,
     @SerializedName("regex")

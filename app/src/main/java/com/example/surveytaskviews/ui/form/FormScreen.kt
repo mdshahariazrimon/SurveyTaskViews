@@ -1,5 +1,6 @@
 package com.example.surveytaskviews.ui.form
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.*
@@ -9,34 +10,81 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.surveytaskviews.data.model.Question
+import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FormScreen(viewModel: FormViewModel = hiltViewModel()) {
+fun FormScreen(
+    viewModel: FormViewModel = hiltViewModel(),
+    onNavigateToSubmittedData: () -> Unit
+) {
     val uiState by viewModel.formState.collectAsState()
 
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        when (val state = uiState) {
-            is FormUiState.Loading -> CircularProgressIndicator()
-            is FormUiState.Success -> {
-                QuestionView(
-                    question = state.currentQuestion,
-                    onNextClicked = { answer -> viewModel.onNextClicked(answer) }
-                )
+    // NEW: Log the current state every time the UI recomposes
+    Log.d("FormScreen", "Recomposing with state: ${uiState::class.simpleName}")
+
+    LaunchedEffect(uiState) {
+        if (uiState is FormUiState.Submitted) {
+            delay(2000)
+            viewModel.startNewForm()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Survey") },
+                actions = {
+                    TextButton(onClick = onNavigateToSubmittedData) {
+                        Text("View Submissions")
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentAlignment = Alignment.Center
+        ) {
+            when (val state = uiState) {
+                is FormUiState.Loading -> CircularProgressIndicator()
+                is FormUiState.Submitted -> {
+                    Text("Form submitted successfully! Restarting...")
+                }
+                is FormUiState.Success -> {
+                    QuestionView(
+                        question = state.currentQuestion,
+                        onNextClicked = { answer ->
+                            viewModel.onNextClicked(state.currentQuestion.id, answer)
+                        },
+                        onSkipClicked = { viewModel.onSkipClicked() }
+                    )
+                }
+                is FormUiState.Error -> Text(text = "Error: ${state.message}")
             }
-            is FormUiState.Error -> Text(text = "Error: ${state.message}")
         }
     }
 }
 
+
 @Composable
 fun QuestionView(
     question: Question,
-    onNextClicked: (String) -> Unit
+    onNextClicked: (String) -> Unit,
+    onSkipClicked: () -> Unit
 ) {
     var currentAnswer by remember(question.id) { mutableStateOf<Any>("") }
+    var isInputValid by remember(question.id) { mutableStateOf(true) }
+
+    fun validate(input: String): Boolean {
+        return if (question.regex.isNullOrEmpty()) {
+            true
+        } else {
+            Regex(question.regex).matches(input)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -54,14 +102,27 @@ fun QuestionView(
 
             when (question.type) {
                 "textInput", "numberInput" -> {
+                    val text = currentAnswer as? String ?: ""
+                    isInputValid = validate(text)
+
                     OutlinedTextField(
-                        value = currentAnswer as? String ?: "",
-                        onValueChange = { currentAnswer = it },
+                        value = text,
+                        onValueChange = {
+                            currentAnswer = it
+                            isInputValid = validate(it)
+                        },
                         label = { Text("Your answer") },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        isError = !isInputValid && text.isNotEmpty(),
+                        supportingText = {
+                            if (!isInputValid && text.isNotEmpty()) {
+                                Text("Invalid input.")
+                            }
+                        }
                     )
                 }
                 "radio" -> {
+                    isInputValid = true
                     if (currentAnswer !is String) currentAnswer = ""
                     val answer = currentAnswer as String
                     Column {
@@ -89,7 +150,7 @@ fun QuestionView(
                     }
                 }
                 "multipleChoice" -> {
-                    // MODIFIED: This block is updated to handle mutable sets correctly.
+                    isInputValid = true
                     if (currentAnswer !is Set<*>) currentAnswer = mutableSetOf<String>()
                     val selectedAnswers = (currentAnswer as Set<*>).filterIsInstance<String>().toMutableSet()
 
@@ -131,25 +192,36 @@ fun QuestionView(
                         }
                     }
                 }
-                "checkbox" -> Text(text = "Checkbox type UI to be implemented.")
-                else -> Text(text = "Unsupported question type: ${question.type}")
+                else -> Text("Unsupported type: ${question.type}")
             }
         }
 
-        val (finalAnswer, isEnabled) = when (val ans = currentAnswer) {
-            is String -> ans to ans.isNotBlank()
-            is Set<*> -> (ans as Set<String>).joinToString(", ") to ans.isNotEmpty()
-            else -> "" to false
-        }
-
-        Button(
-            onClick = { onNextClicked(finalAnswer) },
-            enabled = isEnabled,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Next")
+            if (question.skip.id != "-1") {
+                TextButton(onClick = onSkipClicked) {
+                    Text("Skip")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            val (finalAnswer, isAnswered) = when (val ans = currentAnswer) {
+                is String -> ans to ans.isNotBlank()
+                is Set<*> -> (ans as Set<String>).joinToString(", ") to ans.isNotEmpty()
+                else -> "" to false
+            }
+
+            val isSubmitButton = question.referTo?.id == "submit"
+
+            Button(
+                onClick = { onNextClicked(finalAnswer) },
+                enabled = isAnswered && isInputValid
+            ) {
+                Text(if (isSubmitButton) "Submit" else "Next")
+            }
         }
     }
 }
